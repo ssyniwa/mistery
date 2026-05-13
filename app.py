@@ -24,39 +24,38 @@ def extract_text_from_pdf(file_path):
 def display_structured_scenario(text):
     """テキストをセクションごとに整形して表示する"""
     
-    # セクション見出しの定義（PDF内の記述に合わせる）
-    sec1_title = "1. ホテルの基本情報"
-    sec2_title = "2. 容疑者たちの証言"
-    sec3_title = "3. 探偵の初期推理"
+    # セクションごとに分割（PDFの見出しに合わせて調整）
+    sections = {
+        "基本情報": "1. ホテルの基本情報",
+        "容疑者の証言": "2. 容疑者たちの証言",
+        "探偵の推理": "3. 探偵の初期推理"
+    }
 
     # --- 1. ホテルの基本情報 ---
-    if sec1_title in text:
+    if sections["基本情報"] in text:
         st.markdown("#### 🏨 現場検証データ")
-        content = text.split(sec1_title)[1].split(sec2_title)[0]
+        content = text.split(sections["基本情報"])[1].split(sections["容疑者の証言"])[0]
         with st.container(border=True):
             st.markdown(content.strip().replace("\n", "  \n"))
 
-    # --- 2. 容疑者の証言 ---
-    if sec2_title in text:
-        st.markdown("#### 🗣️ 容疑者の証言")
-        testimony_part = text.split(sec2_title)[1].split(sec3_title)[0]
+    # --- 2. 容疑者の証言（カード型で横に並べる） ---
+    st.markdown("### 🗣️ 容疑者の証言")
+    if sections["容疑者の証言"] in text:
+        testimony_part = text.split(sections["容疑者の証言"])[1].split(sections["探偵の推理"])[0]
+        # 「容疑者A」「容疑者B」などで分割してカード化
+        cols = st.columns(2) # 2列で表示
         
-        # 箇条書き（・）で分割して表示
-        suspects = testimony_part.split("・")
-        cols = st.columns(2)
-        count = 0
-        for s in suspects:
-            clean_s = s.strip()
-            if clean_s:
-                with cols[count % 2]:
-                    with st.chat_message("user"):
-                        st.write(clean_s)
-                count += 1
+        # 簡易的な分割（実際の内容に合わせて微調整が必要）
+        suspects_raw = testimony_part.split("・")
+        for idx, s in enumerate(suspects_raw):
+            if len(s.strip()) > 5:
+                with cols[idx % 2]:
+                    st.chat_message("user").write(s.strip())
 
     # --- 3. 探偵の推理 ---
-    if sec3_title in text:
+    if sections["探偵の推理"] in text:
         st.markdown("#### 🕵️‍♂️ 探偵の現時点の結論")
-        detective_part = text.split(sec3_title)[1]
+        detective_part = text.split(sections["探偵の推理"])[1]
         st.warning(f"探偵「{detective_part.strip()}」")
 
 # --- メインアプリ構成 ---
