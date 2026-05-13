@@ -2,73 +2,140 @@ import streamlit as st
 from pypdf import PdfReader
 import os
 
+# --- ユーティリティ関数 ---
+
 def extract_text_from_pdf(file_path):
-    """PDFからテキストを抽出し、項目1, 2, 3の部分を抜き出す"""
-    reader = PdfReader(file_path)
-    full_text = ""
-    for page in reader.pages:
-        full_text += page.extract_text()
-    
-    # 「4. 事件の真相」より前の部分（項目1, 2, 3）のみを取得
-    display_content = full_text.split("4. 事件の真相")[0]
-    # 正解データ（判定用）として後半を取得
-    answer_content = full_text.split("4. 事件の真相")[-1] if "4. 事件の真相" in full_text else ""
-    
-    return display_content, answer_content
-
-st.title("🔎 探偵アシスタント：事件ファイル選択")
-
-# 1. シナリオファイルの選択
-# フォルダ内のPDFファイルをリストアップ（仮にscenarioで始まるファイル）
-scenario_files = [f for f in os.listdir(".") if f.endswith(".pdf") and "scenario" in f]
-
-if not scenario_files:
-    st.error("シナリオファイル（PDF）が見つかりません。")
-else:
-    selected_file = st.selectbox("調査する事件を選択してください", scenario_files)
-
-    if st.button("捜査開始"):
-        # PDFから内容を抽出してセッションに保存
-        display_text, answer_text = extract_text_from_pdf(selected_file)
-        st.session_state.current_scenario = display_text
-        st.session_state.answer_key = answer_text
-        st.session_state.chat_history = []
-
-# 2. 画面表示（項目1, 2, 3の内容）
-if "current_scenario" in st.session_state:
-    st.divider()
-    st.markdown("### 📋 事件記録（項目1〜3）")
-    # PDFのテキストを整形して表示
-    st.info(st.session_state.current_scenario)
-
-    # 3. 正誤判定パート
-    st.subheader("🕵️‍♂️ 推理の修正")
-    user_input = st.chat_input("容疑者の嘘を指摘してください")
-
-    if user_input:
-        # 簡易判定：正解データ（answer_key）に含まれるキーワードと照合
-        # 例：正解データに「容疑者A」とあれば、入力に「A」が含まれるか確認
-        is_correct = False
-        # PDF内の正解セクションから嘘つきの名前を特定するロジック（簡易版）
-        if "容疑者A" in st.session_state.answer_key and "A" in user_input:
-            is_correct = True
-        elif "容疑者B" in st.session_state.answer_key and "B" in user_input:
-            is_correct = True
-        elif "容疑者C" in st.session_state.answer_key and "C" in user_input:
-            is_correct = True
-        elif "容疑者D" in st.session_state.answer_key and "D" in user_input:
-            is_correct = True
-
-        if is_correct:
-            response = "「素晴らしい！まさにその通りだ。私の推理が間違っていたよ。」"
-            st.balloons()
-        else:
-            response = "「うーむ、それは決定的な矛盾とは言えないようだ。もう一度よく資料を読んでみてくれ。」"
+    """PDFからテキストを抽出し、表示用（項目1-3）と正解用に分割する"""
+    try:
+        reader = PdfReader(file_path)
+        full_text = ""
+        for page in reader.pages:
+            full_text += page.extract_text()
         
-        st.session_state.chat_history.append(("player", user_input))
-        st.session_state.chat_history.append(("detective", response))
+        # 「4. 事件の真相」で分割
+        parts = full_text.split("4. 事件の真相")
+        display_content = parts[0]
+        answer_content = parts[1] if len(parts) > 1 else ""
+        return display_content, answer_content
+    except Exception as e:
+        st.error(f"PDFの読み込みに失敗しました: {e}")
+        return None, None
 
+def display_structured_scenario(text):
+    """テキストをセクションごとに整形して表示する"""
+    
+    # セクション見出しの定義（PDF内の記述に合わせる）
+    sec1_title = "1. ホテルの基本情報"
+    sec2_title = "2. 容疑者たちの証言"
+    sec3_title = "3. 探偵の初期推理"
+
+    # --- 1. ホテルの基本情報 ---
+    if sec1_title in text:
+        st.markdown("#### 🏨 現場検証データ")
+        content = text.split(sec1_title)[1].split(sec2_title)[0]
+        with st.container(border=True):
+            st.markdown(content.strip().replace("\n", "  \n"))
+
+    # --- 2. 容疑者の証言 ---
+    if sec2_title in text:
+        st.markdown("#### 🗣️ 容疑者の証言")
+        testimony_part = text.split(sec2_title)[1].split(sec3_title)[0]
+        
+        # 箇条書き（・）で分割して表示
+        suspects = testimony_part.split("・")
+        cols = st.columns(2)
+        count = 0
+        for s in suspects:
+            clean_s = s.strip()
+            if clean_s:
+                with cols[count % 2]:
+                    with st.chat_message("user"):
+                        st.write(clean_s)
+                count += 1
+
+    # --- 3. 探偵の推理 ---
+    if sec3_title in text:
+        st.markdown("#### 🕵️‍♂️ 探偵の現時点の結論")
+        detective_part = text.split(sec3_title)[1]
+        st.warning(f"探偵「{detective_part.strip()}」")
+
+# --- メインアプリ構成 ---
+
+st.set_page_config(page_title="探偵アシスタント：事件簿", layout="wide")
+st.title("🔎 探偵アシスタント：Web版")
+
+# 1. シナリオ選択（サイドバー）
+with st.sidebar:
+    st.header("🗂 事件ファイル選択")
+    all_files = os.listdir(".")
+    scenario_pdfs = [f for f in all_files if f.endswith(".pdf") and f.startswith("scenario")]
+    
+    selected_pdf = st.selectbox("調査する事件を選んでください", scenario_pdfs)
+    
+    if st.button("捜査を開始する"):
+        # データの抽出
+        display_txt, answer_txt = extract_text_from_pdf(selected_pdf)
+        st.session_state.current_scenario = display_txt
+        st.session_state.answer_key = answer_txt
+        st.session_state.chat_history = []
+        # 画像パスの特定（JPGとPNGの両方に対応）
+        base_name = selected_pdf.replace(".pdf", "")
+        img_path_jpg = f"{base_name}.jpg"
+        img_path_png = f"{base_name}.png"
+
+        if os.path.exists(img_path_jpg):
+            st.session_state.current_image = img_path_jpg
+        elif os.path.exists(img_path_png):
+            st.session_state.current_image = img_path_png
+        else:
+            st.session_state.current_image = None
+# 2. メイン画面の表示
+if "current_scenario" in st.session_state:
+    
+    # 画像があれば表示
+    if st.session_state.current_image:
+        st.image(st.session_state.current_image, caption="現場写真・見取り図", use_container_width=True)
+    
+    # 構造化テキストの表示
+    display_structured_scenario(st.session_state.current_scenario)
+
+    st.divider()
+
+    # 3. チャット・推理指摘パート
+    st.subheader("💡 矛盾を指摘して探偵を導こう")
+    
     # チャット履歴表示
     for role, text in st.session_state.chat_history:
         with st.chat_message(role):
             st.write(text)
+
+    user_input = st.chat_input("（例：容疑者Aの証言は花火の音と矛盾している）")
+
+    if user_input:
+        # プレイヤーのメッセージを履歴に追加
+        st.session_state.chat_history.append(("human", user_input))
+        
+        # 判定ロジック（正解PDFに含まれる容疑者名とキーワードで簡易チェック）
+        # 正解データ（answer_key）に「容疑者A」があり、入力に「A」が含まれるか
+        is_correct = False
+        target_suspect = ""
+        
+        for name in ["A", "B", "C", "D"]:
+            if f"容疑者{name}" in st.session_state.answer_key:
+                target_suspect = name
+                break
+        
+        if target_suspect in user_input and ("矛盾" in user_input or "嘘" in user_input or "おかしい" in user_input):
+            is_correct = True
+
+        if is_correct:
+            ans = f"「なるほど！{target_suspect}の証言は確かに不自然だ。君の指摘で目が覚めたよ！」"
+            st.balloons()
+        else:
+            ans = "「うーむ、一理あるようだが……まだ決定的とは言えないな。別の視点はないか？」"
+        
+        st.session_state.chat_history.append(("assistant", ans))
+        st.rerun() # 画面を更新して最新のチャットを表示
+
+else:
+    st.info("サイドバーから事件ファイルを選択して「捜査を開始」してください。")
