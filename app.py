@@ -107,5 +107,19 @@ if "current_scenario" in st.session_state:
     user_input = st.chat_input("矛盾を指摘してください")
     if user_input:
         st.session_state.chat_history.append(("human", user_input))
-        # （判定ロジック：前回同様）
+        # 判定ロジック
+        is_correct = False
+        target = ""
+        # answer_keyから「嘘つき: 容疑者X」を探す
+        match = re.search(r"嘘つき:\s*容疑者([A-D])", st.session_state.answer_key)
+        if match:
+            target = match.group(1)
+        
+        if target and target in user_input and any(kw in user_input for kw in ["矛盾", "嘘", "おかしい", "静か"]):
+            ans = f"「なるほど！{target}の証言は現場の状況と明らかに食い違っている。君の指摘通りだ！」"
+            st.balloons()
+        else:
+            ans = "「……一理あるが、まだ決定的とは言えないな。別の視点はないか？」"
+            
+        st.session_state.chat_history.append(("assistant", ans))
         st.rerun()
