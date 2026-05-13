@@ -36,7 +36,7 @@ if "current_data" in st.session_state:
     st.table(df)
 
     # 3. 容疑者の証言（吹き出し）
-    st.markdown("### 🗣️ 容疑者の証言")
+    st.markdown("### 🗣️ 容疑者の証言(昨夜20:30頃)")
     for t in data["testimonies"]:
         with st.chat_message("user", avatar="👤"):
             st.markdown(f"**{t['name']} ({t['profile']})**")
