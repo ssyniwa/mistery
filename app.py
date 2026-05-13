@@ -2,6 +2,7 @@ import streamlit as st
 from pypdf import PdfReader
 import os
 import pandas as pd
+import re
 
 # --- ユーティリティ関数 ---
 
@@ -13,7 +14,6 @@ def extract_text_from_pdf(file_path):
         for page in reader.pages:
             full_text += page.extract_text()
         
-        # 「4. 事件の真相」で分割
         parts = full_text.split("4. 事件の真相")
         display_content = parts[0]
         answer_content = parts[1] if len(parts) > 1 else ""
@@ -23,47 +23,56 @@ def extract_text_from_pdf(file_path):
         return None, None
 
 def display_structured_scenario(text):
-    """テキストを構造化して表示する（表形式 ＆ 吹き出し）"""
+    """テキストを構造化して表示（3列の表 ＆ 吹き出し）"""
     
     sec1_title = "1. ホテルの基本情報"
     sec2_title = "2. 容疑者たちの証言"
     sec3_title = "3. 探偵の初期推理"
 
-    # --- 1. ホテルの基本情報（表形式に変換） ---
+    # --- 1. ホテルの基本情報（3列の正確な表形式） ---
     if sec1_title in text:
-        st.markdown("#### 🏨 現場検証データ（イベントスケジュール）")
+        st.markdown("#### 🏨 ホテル・イベントスケジュール")
         content = text.split(sec1_title)[1].split(sec2_title)[0].strip()
         
-        # テキスト内の「時刻」「内容」などの改行を簡易的にリスト化して表にする
-        lines = [line.strip() for line in content.split("\n") if ":" in line]
-        if lines:
-            data = [line.split("：") if "：" in line else line.split(":") for line in lines]
-            df = pd.DataFrame(data, columns=["項目/時刻", "詳細"])
-            st.table(df) # 表形式で表示
+        # 時刻(00:00-00:00)をキーにして行を分割する試み
+        # PDFのテキスト構造に合わせ、正規表現で「時刻」「イベント」「詳細」を抽出
+        lines = content.split("\n")
+        table_data = []
+        for line in lines:
+            # 例: "20:30-20:50 花火 中庭から打ち上げ..." を分割
+            match = re.match(r"(\d{1,2}:\d{2}\s*[-ー～]\s*\d{1,2}:\d{2})\s+([^\s]+)\s+(.*)", line.strip())
+            if match:
+                table_data.append(match.groups())
+        
+        if table_data:
+            df = pd.DataFrame(table_data, columns=["時刻", "イベント名", "詳細内容"])
+            st.dataframe(df, use_container_width=True, hide_index=True) # インデックスなしで表示
         else:
+            # フォーマットが合わない場合はそのまま表示
             st.info(content)
 
-    # --- 2. 容疑者の証言（吹き出し形式） ---
+    # --- 2. 容疑者の証言（アイコン付き吹き出し） ---
     if sec2_title in text:
         st.markdown("#### 🗣️ 容疑者の証言")
         testimony_part = text.split(sec2_title)[1].split(sec3_title)[0]
         
-        # 容疑者ごとに分割（「・」や「容疑者」というキーワードで区切る）
+        # 箇条書き（・）で分割
         suspects = testimony_part.split("・")
         for s in suspects:
             clean_s = s.strip()
-            if clean_s:
-                # 名前とセリフを分ける（例 容疑者A: 「〜〜」）
-                if "：" in clean_s:
-                    name, quote = clean_s.split("：", 1)
-                elif ":" in clean_s:
-                    name, quote = clean_s.split(":", 1)
-                else:
-                    name, quote = "容疑者", clean_s
-                
-                with st.chat_message("user", avatar="👤"):
-                    st.markdown(f"**{name}**")
-                    st.write(quote)
+            if not clean_s: continue
+            
+            # 「容疑者A（職業/年齢）: セリフ」の形式を想定
+            if "：" in clean_s:
+                name_info, quote = clean_s.split("：", 1)
+            elif ":" in clean_s:
+                name_info, quote = clean_s.split(":", 1)
+            else:
+                name_info, quote = "関係者", clean_s
+            
+            with st.chat_message("user", avatar="👤"):
+                st.markdown(f"**{name_info.strip()}**")
+                st.write(quote.strip())
 
     # --- 3. 探偵の推理 ---
     if sec3_title in text:
@@ -74,8 +83,8 @@ def display_structured_scenario(text):
 
 # --- メインアプリ構成 ---
 
-st.set_page_config(page_title="探偵アシスタント：事件簿", layout="wide")
-st.title("🔎 探偵アシスタント：Web版")
+st.set_page_config(page_title="探偵アシスタント：WEBミステリー", layout="wide")
+st.title("🔎 探偵アシスタント：碧水の館事件簿")
 
 with st.sidebar:
     st.header("🗂 事件ファイル選択")
@@ -88,34 +97,33 @@ with st.sidebar:
         st.session_state.answer_key = answer_txt
         st.session_state.chat_history = []
         
-        # 画像対応（JPG / PNG 両対応）
         base_name = selected_pdf.replace(".pdf", "")
-        img_jpg, img_png = f"{base_name}.jpg", f"{base_name}.png"
-        if os.path.exists(img_jpg):
-            st.session_state.current_image = img_jpg
-        elif os.path.exists(img_png):
-            st.session_state.current_image = img_png
-        else:
-            st.session_state.current_image = None
+        # PNGとJPGの優先チェック
+        img_candidates = [f"{base_name}.png", f"{base_name}.jpg"]
+        st.session_state.current_image = next((img for img in img_candidates if os.path.exists(img)), None)
 
 if "current_scenario" in st.session_state:
+    # 画像表示
     if st.session_state.current_image:
-        st.image(st.session_state.current_image, caption="現場写真・見取り図", use_container_width=True)
+        st.image(st.session_state.current_image, caption="現場資料：見取り図・写真", use_container_width=True)
     
+    # 構造化された表示を実行
     display_structured_scenario(st.session_state.current_scenario)
 
     st.divider()
     st.subheader("💡 矛盾を指摘して探偵を導こう")
     
+    # チャット履歴
     for role, text in st.session_state.chat_history:
         with st.chat_message(role):
             st.write(text)
 
-    user_input = st.chat_input("例：容疑者Aの証言は花火の音と矛盾している")
+    user_input = st.chat_input("容疑者の嘘を指摘してください...")
 
     if user_input:
         st.session_state.chat_history.append(("human", user_input))
         
+        # 判定
         is_correct = False
         target_suspect = ""
         for name in ["A", "B", "C", "D"]:
@@ -123,11 +131,13 @@ if "current_scenario" in st.session_state:
                 target_suspect = name
                 break
         
-        if target_suspect and (target_suspect in user_input) and any(kw in user_input for kw in ["矛盾", "嘘", "おかしい", "静か"]):
-            ans = f"「なるほど！{target_suspect}の証言は確かに不自然だ。君の指摘で目が覚めたよ！」"
+        # 正解条件：正しい容疑者のアルファベットが含まれ、かつ矛盾を示唆する言葉がある
+        keywords = ["矛盾", "嘘", "おかしい", "静か", "音", "聞こえ"]
+        if target_suspect and (target_suspect in user_input) and any(kw in user_input for kw in keywords):
+            ans = f"「なるほど！{target_suspect}の証言は現場の状況と明らかに食い違っている。君の指摘のおかげで真実が見えてきたよ！」"
             st.balloons()
         else:
-            ans = "「うーむ、一理あるようだが……まだ決定的とは言えないな。別の視点はないか？」"
+            ans = "「……一理あるかもしれないが、まだ決定的な証拠とは言えないようだ。もう一度資料を精査してみよう。」"
         
         st.session_state.chat_history.append(("assistant", ans))
         st.rerun()
