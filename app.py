@@ -4,81 +4,73 @@ import os
 import pandas as pd
 import re
 
-# --- 1. PDF解析・抽出用関数 ---
 def extract_case_files(file_path):
-    """PDFからテキストを抽出し、表示用と正解用に分割する"""
     try:
         reader = PdfReader(file_path)
         full_text = ""
         for page in reader.pages:
             full_text += page.extract_text()
-        
-        # 「4. 事件の真相」という見出しで表示用と正解用を切り分ける
         parts = full_text.split("4. 事件の真相")
-        display_content = parts[0]
-        answer_content = parts[1] if len(parts) > 1 else ""
-        return display_content, answer_content
+        return parts[0], parts[1] if len(parts) > 1 else ""
     except Exception as e:
         st.error(f"PDF読み込みエラー: {e}")
         return None, None
 
-# --- 2. 構造化表示用関数 ---
 def display_game_screen(text):
-    """テキストを解析して『表』と『吹き出し』に加工して表示する[cite: 1, 2]"""
-    
-    # セクション分割用キーワード
     sec1_marker = "1. ホテルの基本情報"
     sec2_marker = "2. 容疑者たちの証言"
     sec3_marker = "3. 探偵の初期推理"
 
-   # --- セクション1: ホテルの基本情報（枠線付き表形式） ---
+    # --- セクション1: ホテルの基本情報（表形式） ---
     if sec1_marker in text:
         st.markdown("### 🏨 現場データ：イベントスケジュール")
-        # セクション1と2の間を抜き出し[cite: 2]
         sec1_raw = text.split(sec1_marker)[1].split(sec2_marker)[0].strip()
         
-        # 正規表現で「時刻」「イベント名」「詳細」を抽出
-        # PDFのテキストが「20:00-21:00 イベント名 詳細」の形式であることを想定
-        table_pattern = re.findall(r"(\d{1,2}:\d{2}.*?\d{1,2}:\d{2})\s+([^\n\s]+)\s+([^\n]+)", sec1_raw)
+        # 時刻を起点にしてデータを分割するロジック
+        time_pattern = r"(\d{1,2}:\d{2}\s*[-ー～]\s*\d{1,2}:\d{2})"
+        lines = sec1_raw.split("\n")
+        table_data = []
         
-        if table_pattern:
-            # 抽出したデータをデータフレームに変換[cite: 1, 3]
-            df = pd.DataFrame(table_pattern, columns=["時刻", "イベント名", "詳細内容"])
-            
-            # st.table を使うことで、全行が表示され、明確な枠線が付いた表になります
-            st.table(df) 
+        for line in lines:
+            # 時刻が含まれている行を探す
+            times = re.findall(time_pattern, line)
+            if times:
+                time_str = times[0]
+                # 時刻以降のテキストを「イベント」と「詳細」に分ける（最初の空白で分割）
+                remaining = line.replace(time_str, "").strip()
+                parts = re.split(r'\s+', remaining, maxsplit=1)
+                
+                event_name = parts[0] if len(parts) > 0 else ""
+                detail = parts[1] if len(parts) > 1 else ""
+                table_data.append([time_str, event_name, detail])
+        
+        if table_data:
+            df = pd.DataFrame(table_data, columns=["時刻", "イベント名", "詳細内容"])
+            st.table(df) # 枠線ありの表を表示
         else:
-            # パターンに一致しない場合のフォールバック表示
-            st.info("表形式の解析に失敗しました。直接テキストを表示します：")
-            st.code(sec1_raw)
+            st.info("表の解析を試みましたが、直接テキストを表示します：")
+            st.text(sec1_raw)
 
-    # --- セクション2: 容疑者の証言（吹き出し形式） ---
+    # --- セクション2 & 3 は以前の吹き出しロジックを維持 ---
     if sec2_marker in text:
         st.markdown("### 🗣️ 容疑者の証言")
         sec2_raw = text.split(sec2_marker)[1].split(sec3_marker)[0].strip()
-        
-        # 容疑者ごとの発言を分割（「・容疑者X：」の形式を想定）
-        suspect_lines = re.findall(r"(容疑者[A-D].*?[:：].*?)(?=容疑者[A-D]|$)", sec2_raw.replace("\n", " "))
-        
-        if suspect_lines:
-            for line in suspect_lines:
-                # 名前と発言を分離
-                if "：" in line: name, quote = line.split("：", 1)
-                elif ":" in line: name, quote = line.split(":", 1)
-                else: name, quote = "関係者", line
-                
-                with st.chat_message("user", avatar="👤"): # ユーザー側吹き出し[cite: 1]
-                    st.markdown(f"**{name.strip()}**")
-                    st.write(quote.strip())
-        else:
-            st.write(sec2_raw)
+        suspect_lines = re.findall(r"(容疑者[A-D].*?[:：].*?)(?=・容疑者[A-D]|$)", sec2_raw.replace("\n", " "))
+        for line in suspect_lines:
+            if "：" in line: name, quote = line.split("：", 1)
+            elif ":" in line: name, quote = line.split(":", 1)
+            else: name, quote = "容疑者", line
+            with st.chat_message("user", avatar="👤"):
+                st.markdown(f"**{name.strip()}**")
+                st.write(quote.strip())
 
-    # --- セクション3: 探偵の推理（探偵の吹き出し） ---
     if sec3_marker in text:
-        st.markdown("### 🕵️‍♂️ 探偵の現状の推理")
+        st.markdown("### 🕵️‍♂️ 探偵の推理")
         sec3_raw = text.split(sec3_marker)[1].strip()
-        with st.chat_message("assistant", avatar="🕵️"): # 探偵側吹き出し[cite: 2]
+        with st.chat_message("assistant", avatar="🕵️"):
             st.write(sec3_raw)
+
+# --- 以下、メイン処理（画像・チャット判定等）は前回と同様 ---
 
 # --- 3. メインアプリ構成 ---
 st.set_page_config(page_title="ミステリー探偵アシスタント", layout="wide")
