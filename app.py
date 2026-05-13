@@ -10,11 +10,10 @@ def extract_case_files(file_path):
         reader = PdfReader(file_path)
         full_text = ""
         for page in reader.pages:
-            # 各ページのテキストを取得し、正規化（余計な改行を整理）
-            page_text = page.extract_text()
-            full_text += page_text + "\n"
+            # 抽出時に1行に繋がってしまう問題に対応するため改行を明示
+            full_text += page.extract_text() + "\n"
         
-        # 「4.」を境に前半（問題）と後半（正解）に分ける
+        # 「4. 事件の真相」で分割
         parts = re.split(r"4\.\s*事件の真相", full_text)
         display_content = parts[0]
         answer_content = parts[1] if len(parts) > 1 else ""
@@ -25,29 +24,29 @@ def extract_case_files(file_path):
 
 # --- 2. 構造化表示用関数 ---
 def display_game_screen(text):
-    # 正規表現で見出しの位置を特定（1., 2., 3. の形式を柔軟に探す）
-    # セクションごとに分割
-    s1 = re.search(r"1\.\s*ホテルの基本情報", text)
-    s2 = re.search(r"2\.\s*容疑者たちの証言", text)
-    s3 = re.search(r"3\.\s*探偵の初期推理", text)
+    # 見出しの開始位置を正規表現で検索（行頭でなくても見つける設定）
+    m1 = re.search(r"1\.\s*ホテルの基本情報", text)
+    m2 = re.search(r"2\.\s*容疑者たちの証言", text)
+    m3 = re.search(r"3\.\s*探偵の初期推理", text)
 
-    if not s1 or not s2 or not s3:
-        st.error("PDF内の見出し（1.〜3.）が見つかりません。見出しの形式を確認してください。")
+    if not m1 or not m2 or not m3:
+        st.error("見出しの特定に失敗しました。PDFの構成を確認してください。")
         with st.expander("PDFから抽出された生テキストを表示"):
             st.text(text)
         return
 
-    # --- セクション1: ホテルの基本情報（表形式） ---
+    # --- セクション1: ホテルの基本情報 ---
     st.markdown("### 🏨 現場データ：スケジュール")
-    sec1_raw = text[s1.end():s2.start()].strip()
+    # m1の終わりからm2の始まりまでを抽出
+    sec1_raw = text[m1.end():m2.start()].strip()
     
-    # 時刻(HH:MM-HH:MM)を起点に表を作成
     table_data = []
+    # 時刻(HH:MM-HH:MM)が含まれる行を抽出
     for line in sec1_raw.split("\n"):
-        line = line.strip()
-        match = re.search(r"(\d{1,2}:\d{2}\s*[-ー～]\s*\d{1,2}:\d{2})", line)
-        if match:
-            time_str = match.group(1)
+        time_match = re.search(r"(\d{1,2}:\d{2}\s*[-ー～]\s*\d{1,2}:\d{2})", line)
+        if time_match:
+            time_str = time_match.group(1)
+            # 時刻を除いた部分を「イベント名」と「詳細」に分割
             remaining = line.replace(time_str, "").strip()
             parts = re.split(r'\s+', remaining, maxsplit=1)
             event_name = parts[0] if len(parts) > 0 else "不明"
@@ -57,34 +56,35 @@ def display_game_screen(text):
     if table_data:
         st.table(pd.DataFrame(table_data, columns=["時刻", "イベント名", "詳細内容"]))
     else:
-        st.info("表の自動解析に失敗したため、テキストを表示します：")
-        st.code(sec1_raw)
+        st.info(sec1_raw)
 
-    # --- セクション2: 容疑者の証言（吹き出し形式） ---
+    # --- セクション2: 容疑者の証言 ---
     st.markdown("### 🗣️ 容疑者の証言")
-    sec2_raw = text[s2.end():s3.start()].strip()
+    # m2の終わりからm3の始まりまでを抽出
+    sec2_raw = text[m2.end():m3.start()].strip()
+    # 記号「・」や「·」で分割（半角・全角の両方に対応）
+    suspect_blocks = re.split(r'[・·]', sec2_raw)
     
-    # 容疑者ごとの発言を分割（・ または 容疑者 で始まる行）
-    suspect_blocks = re.split(r'\n(?=・|容疑者)', sec2_raw)
     for block in suspect_blocks:
-        clean_block = block.strip().replace("・", "")
-        if not clean_block: continue
+        if len(block.strip()) < 5: continue # 短すぎるゴミを除外
         
-        if "：" in clean_block: name, quote = clean_block.split("：", 1)
-        elif ":" in clean_block: name, quote = clean_block.split(":", 1)
-        else: name, quote = "関係者", clean_block
+        # 名前と発言を分離
+        if "：" in block: name, quote = block.split("：", 1)
+        elif ":" in block: name, quote = block.split(":", 1)
+        else: name, quote = "関係者", block
             
         with st.chat_message("user", avatar="👤"):
             st.markdown(f"**{name.strip()}**")
             st.write(quote.strip())
 
-    # --- セクション3: 探偵の推理（吹き出し） ---
+    # --- セクション3: 探偵の推理 ---
     st.markdown("### 🕵️‍♂️ 探偵の初期推理")
-    sec3_raw = text[s3.end():].strip()
+    # m3の終わりから最後まで
+    sec3_raw = text[m3.end():].strip()
     with st.chat_message("assistant", avatar="🕵️"):
         st.write(sec3_raw)
 
-# --- メイン処理（サイドバー・チャットなど） ---
+# --- 以下メイン処理 (変更なし) ---
 st.set_page_config(layout="wide")
 st.title("🔎 探偵アシスタント")
 
