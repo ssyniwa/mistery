@@ -31,21 +31,26 @@ def display_game_screen(text):
     sec2_marker = "2. 容疑者たちの証言"
     sec3_marker = "3. 探偵の初期推理"
 
-    # --- セクション1: ホテルの基本情報（表形式） ---
+   # --- セクション1: ホテルの基本情報（枠線付き表形式） ---
     if sec1_marker in text:
         st.markdown("### 🏨 現場データ：イベントスケジュール")
-        # セクション1と2の間を抜き出す
+        # セクション1と2の間を抜き出し[cite: 2]
         sec1_raw = text.split(sec1_marker)[1].split(sec2_marker)[0].strip()
         
-        # 正規表現で「時刻(00:00-00:00) イベント名 詳細」のパターンを抽出
-        # パターン: (時刻) (次の単語) (残りの行)
+        # 正規表現で「時刻」「イベント名」「詳細」を抽出
+        # PDFのテキストが「20:00-21:00 イベント名 詳細」の形式であることを想定
         table_pattern = re.findall(r"(\d{1,2}:\d{2}.*?\d{1,2}:\d{2})\s+([^\n\s]+)\s+([^\n]+)", sec1_raw)
         
         if table_pattern:
+            # 抽出したデータをデータフレームに変換[cite: 1, 3]
             df = pd.DataFrame(table_pattern, columns=["時刻", "イベント名", "詳細内容"])
-            st.table(df) # 枠線付きの表として表示[cite: 1]
+            
+            # st.table を使うことで、全行が表示され、明確な枠線が付いた表になります
+            st.table(df) 
         else:
-            st.info(sec1_raw) # 抽出失敗時はテキスト表示
+            # パターンに一致しない場合のフォールバック表示
+            st.info("表形式の解析に失敗しました。直接テキストを表示します：")
+            st.code(sec1_raw)
 
     # --- セクション2: 容疑者の証言（吹き出し形式） ---
     if sec2_marker in text:
