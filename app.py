@@ -60,7 +60,7 @@ if "current_data" in st.session_state:
         
         # 判定
         culprit = data["answer"]["culprit"]
-        if culprit in user_input and any(kw in user_input for kw in ["矛盾", "嘘", "おかしい", "静か", "湖", "景色", "霧", "場所","冷たい","室温","10度","デスクワーク"]):
+        if culprit in user_input and any(kw in user_input for kw in ["矛盾", "嘘", "おかしい", "静か", "湖", "景色", "霧", "場所","冷たい","室温","10度","デスクワーク","潮位","潮流","サーフィン"]):
             response = f"「素晴らしい！{culprit}の証言の矛盾を見抜いたね。君の指摘通りだ！」"
             st.balloons()
         else:
