@@ -8,7 +8,7 @@ def load_scenario(file_path):
         return json.load(f)
 
 st.set_page_config(layout="wide")
-st.title("🔎 探偵アシスタント：事件簿")
+st.title("🔎 ポンコツ探偵を導け！アシスタントの事件簿")
 
 # サイドバー：JSONファイル選択
 scenario_files = [f for f in os.listdir(".") if f.endswith(".json")]
